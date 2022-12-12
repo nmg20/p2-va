@@ -105,6 +105,12 @@ def getHues(imgs):
     hues.append(cv.cvtColor(img,cv.COLOR_RGB2HSV)[:,:,0])
   return hues
 
+def getHues2(imgs):
+  hues = []
+  for img in imgs:
+    hues.append(cv.cvtColor(img,cv.COLOR_RGB2HLS)[:,:,0])
+  return hues
+
 def ex(hue):
   ret, thr = cv.threshold(hue, 127, 255, cv.THRESH_TOZERO_INV) #Importante que sea invertido
   ret, thr = cv.threshold(thr, 50, 150, cv.THRESH_BINARY_INV)
@@ -141,10 +147,13 @@ def kern(n):
   """
   return np.ones((n,n), dtype='uint8')
 
-def test():
+def test(n):
   imgs, gts = load_imgs()
-  hues = getHues(imgs)
-  return imgs, gts, hues
+  huesv = getHues(imgs)
+  huesl = getHues2(imgs)
+  thv = getThres(huesv)
+  thl = getThres(huesl)
+  shown([imgs[n],huesv[n],huesl[n],thv[n],thl[n],gts[n]],1)
 
 def main():
   imgs, gts = load_imgs()
