@@ -1,3 +1,3 @@
-# p2-va
-Práctica 2 de Visión Artificial Curso 2022/2023 (Material de Trabajo 8)
-klk
+1)Pasar imagen de RGB a HSV (BGR la invierte(?))
+2)Suavizar con una gaussiana
+3)Umbralizar
