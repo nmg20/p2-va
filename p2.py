@@ -15,6 +15,7 @@ miscpath = "./exp/misc/"
 # - El grosor de la carretera es siempre el mismo?
 #     -> número de carriles
 # - Resultado -> un píxel de ancho(?) -> supresión no máxima
+# - ¿Cómo estimar longitudes?
 
 # IDEA:
 # - Tomar el color base de la carretera para extraer sólo zonas que correspondan
@@ -26,7 +27,9 @@ Approach:
   - Convertir la imagen de RGB a HSV
   - Procesar sólo el canal H
   - Umbralizarlo
-  - Hacer opening/closing para deshacerse de patches pequeños
+  ***- Hacer opening/closing para deshacerse de patches pequeños
+  - Aplicar filtro de medianas para eliminar ruido una vez umbralizado
+  - cv.findContours (?)
 
 Progreso:
   - conseguidos buenos resultados con umbralización
@@ -46,9 +49,9 @@ def save_img(img, name, path):
     path=miscpath
   cv.imwrite(os.path.join(path,name+".png"), img)
 
-def save_imgs(imgs, name, path):
+def save_imgs(imgs, names, path):
   i = 0
-  names = getNames(len(imgs),name)
+  # names = getNames(len(imgs),name)
   if not os.path.exists(path):
     os.makedirs(path)
   while i<len(imgs):
@@ -72,20 +75,16 @@ def load_imgs():
     gts.append(cv.imread(gtspath+gt, cv.IMREAD_GRAYSCALE)/255.)
   return imgs, gts
 
-def show(img,rsz):
-  if rsz :
-    img = cv.resize(img,(500,500))
+def show(img):
+  img = cv.resize(img,(500,500))
   cv.imshow("", img)
   cv.waitKey(0)
   cv.destroyAllWindows()
 
-def shown(imgs, rsz):
+def shown(imgs):
   i=0
   while i<len(imgs):
-    if rsz :
-      img = cv.resize(imgs[i],(500,500))
-    else :
-      img = imgs[i]
+    img = cv.resize(imgs[i],(500,500))
     cv.imshow("win"+str(i),img)
     cv.waitKey(0)
     cv.destroyWindow("win"+str(i))
@@ -114,20 +113,22 @@ def getHues2(imgs):
 def ex(hue):
   ret, thr = cv.threshold(hue, 127, 255, cv.THRESH_TOZERO_INV) #Importante que sea invertido
   ret, thr = cv.threshold(thr, 50, 150, cv.THRESH_BINARY_INV)
-  shown([u1,u2],1)
+  shown([u1,u2])
 
-# def getThres(imgs):
-#   thres = []
-#   for img in imgs:
-#     ret, thr = cv.threshold(img, 127, 255, cv.THRESH_TOZERO_INV) #Importante que sea invertido
-#     ret, thr = cv.threshold(img, 50, 150, cv.THRESH_BINARY_INV)
-#     thres.append(thr)
-#   return thres
+def gaussImg(img,n):
+  return cv.GaussianBlur(img,(n,n),0)
+
+def gaussImgs(imgs,n):
+  gs = []
+  for i in range(0,len(imgs)):
+    gs.append(gaussImg(imgs[i],n))
+  return gs
 
 def getThres(imgs):
   thres = []
   for img in imgs:
-    thr = cv.threshold(img, 30, 255, cv.THRESH_BINARY)[1]
+    lim = (img.min()+img.max())/3
+    thr = cv.threshold(img, lim, 255, cv.THRESH_BINARY)[1]
     thres.append(thr)
   return thres
 
@@ -153,7 +154,25 @@ def test(n):
   huesl = getHues2(imgs)
   thv = getThres(huesv)
   thl = getThres(huesl)
-  shown([imgs[n],huesv[n],huesl[n],thv[n],thl[n],gts[n]],1)
+  # shown([imgs[n],huesv[n],huesl[n],thv[n],thl[n],gts[n]])
+  return imgs, gts, huesv, huesl, thl
+
+# def exp1(imgs, n):
+#   imghue = cv.cvtColor(imgs[n],cv.COLOR_RGB2HSV)[:,:,0]
+#   smoothimg = cv.GaussianBlur(imghue, (5,5), 0)
+#   thresh = cv.threshold(smoothimg, cv.THRESH_BINARY)[1]
+#   shown([imghue,smoothimg,thresh])
+
+def exp1(imgs,n):
+  hues = getHues(imgs)
+  smooths = gaussImgs(hues,5)
+  threshs = getThres(smooths)
+  if n>0:
+    show([hues[n],smooths[n],threshs[n]])
+  else:
+    shown(hues+smooths+threshs)
+  return hues, smooths, threshs
+
 
 def main():
   imgs, gts = load_imgs()
@@ -165,7 +184,7 @@ def main():
   # save_imgs(hues,names(len(hues),"hsv""),hpath)
   thres = getThres(hues)
   # save_imgs(thres,names(len(thres),"thres"),thrspath)
-  # show(thres,1)
+  # show(thres)
   openings = getOpenings(thres, [])
 
 
