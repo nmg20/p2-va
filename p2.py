@@ -9,6 +9,13 @@ imgspath = "./materiales/img/"
 hpath = "./exp/hues/"
 thrspath = "./exp/thres/"
 miscpath = "./exp/misc/"
+"""
+Códigos de conversión de colores
+  RGB2HSV = 41
+  BGR2HSV = 40
+  RGB2HLS = 53
+  BGR2HLS = 52
+"""
 
 # DUDAS:
 # - Las carreteras tienen el mismo color siempre? (sombras y zonas similares)
