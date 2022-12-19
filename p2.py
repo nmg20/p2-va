@@ -26,6 +26,8 @@ codes = {
 # Rn usando bgr2hls y funciona mejor sobre todo en las 2 últimas
 # Aplicar umbralizado adaptativo
 
+# Ostu -> threshold muy básico -> umbral adaptativo
+
 ##### Funciones auxiliares de cargado/registro de imágenes #####
 
 def getNames(n,name):
@@ -96,21 +98,35 @@ def gaussImgs(imgs,n):
 #     thres.append(thr)
 #   return thres
 
-def getThres(imgs, lims, div):
+def getThres(imgs, lim, div):
   thres = []
   for img in imgs:
-    if lims==[]:
-      lim1 = (img.min()+img.max())/div
-      lim2 = 255
-    else:
-      lim1, lim2 = lims
-    thr = cv.threshold(img, lim1, lim2, cv.THRESH_BINARY)[1]
+    if lim==0:
+      lim = (img.min()+img.max())/div
+    thr = cv.threshold(img, lim, 255, cv.THRESH_BINARY)[1]
     thres.append(thr)
   return thres
 
 """
 Con BRG2HSV -> thresh[80/90,115/120]
 """
+
+def otsus(imgs):
+  ts=[]
+  for i in imgs:
+    v=filters.threshold_otsu(i)
+    t.append(cv.threshold(i,v,255,cv.THRESH_BINARY)[1])
+  return t
+
+def getThresOtsu(imgs):
+  thres = []
+  for img in imgs:
+    thr = cv.threshold(img, 0, 255, cv.THRESH_BINARY_INV | 
+      cv.THRESH_OTSU)[1]
+    thres.append(thr)
+  return thres
+
+def getOpening(img, kernel, n)
 
 def getOpenings(imgs, kernel, n):
   if kernel==[]:
@@ -120,6 +136,17 @@ def getOpenings(imgs, kernel, n):
     o = cv.morphologyEx(img, cv.MORPH_OPEN, kernel)
     openings.append(o)
   return openings
+
+"""
+Kernels:
+kv3 = np.array([[0,1,0],[0,1,0],[0,1,0]], dtype='uint8')
+kv4 = np.array([[0,1,0],[0,1,0],[0,1,0],[0,1,0]], dtype='uint8')
+kv5 = np.array([[0,1,0],[0,1,0],[0,1,0],[0,1,0],[0,1,0]], dtype='uint8')
+kh3 = np.array([[0,0,0],[1,1,1],[0,0,0]], dtype='uint8')
+kh4 = np.array([[0,0,0,0],[1,1,1,1],[0,0,0,0]], dtype='uint8')
+kh5 = np.array([[0,0,0,0,0],[1,1,1,1,1],[0,0,0,0,0]], dtype='uint8')
+"""
+
 
 def getHues(imgs, code):
   hues = []
@@ -142,11 +169,56 @@ def compare(i1, i2):
   scores['jc-none'] = jaccard_score(array1, array2, average=None)
   return scores
 
-def listcompare(l1, l2):
+def listCompare(l1, l2):
   scores = {}
   for i in range(len(l1)):
     scores[i] = compare(l1[i], l2[i])
   return scores
+
+def invertList(l):
+  result = []
+  for e in l:
+    result.append(255-e)
+  return result
+
+def blendLists(l1, l2, weights=[]):
+  """
+  Fusiona imágenes de dos listas distintas, ponderadas según weights.
+  Las listas deben tener las mismas dimensiones.
+  """
+  result = []
+  if weights==[]:
+    p1, p2 = 0.5, 0.5
+  else:
+    p1, p2 = weights
+  for i in np.arange(len(l1)):
+    result.append(l1[i]*p1+l2[i]*p2)
+  return result
+
+###################
+
+def exp1():
+  imgs, gts = load()
+  hues = getHues(imgs, "bgr2hsv")
+  gs = gaussImgs(hues, 5)
+  # ts = getThres(gs, [80,255], 0)
+  ts = getThres(gs, 80, 0)
+  tt = cv.threshold(gs[0], 0, 255, cv.THRESH_BINARY_INV | cv.THRESH_OTSU)[1]
+  return imgs, gts, hues, gs, ts, tt
+
+def exp2():
+  imgs, gts = load()
+  hues = getHues(imgs, "bgr2hsv")
+  hues2 = getHues(imgs, "rgb2hsv")
+  gs = gaussImgs(hues, 5)
+  gs2 = gaussImgs(hues2, 5)
+  # ts = getThres(gs, [80,255], 0)
+  ts = getThres(gs, 80, 0)
+  ts2 = invertList(getThres(gs2, 50, 0))
+  tt = cv.threshold(gs[0], 0, 255, cv.THRESH_BINARY_INV | cv.THRESH_OTSU)[1]
+  return imgs, gts, hues, gs, ts, ts2
+
+###################
 
 def main():
   imgs, gts = load()
