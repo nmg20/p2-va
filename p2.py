@@ -2,7 +2,7 @@ import os
 import numpy as np
 import cv2 as cv
 import matplotlib.pyplot as plt
-
+from sklearn.metrics import f1_score, jaccard_score
 
 gtspath = "./materiales/gt/"
 imgspath = "./materiales/img/"
@@ -16,34 +16,17 @@ Códigos de conversión de colores
   RGB2HLS = 53
   BGR2HLS = 52
 """
+codes = {
+  "bgr2hsv":40,
+  "rgb2hsv":41,
+  "bgr2hls":52,
+  "rgb2hls":53
+}
 
-# DUDAS:
-# - Las carreteras tienen el mismo color siempre? (sombras y zonas similares)
-# - El grosor de la carretera es siempre el mismo?
-#     -> número de carriles
-# - Resultado -> un píxel de ancho(?) -> supresión no máxima
-# - ¿Cómo estimar longitudes?
+# Rn usando bgr2hls y funciona mejor sobre todo en las 2 últimas
+# Aplicar umbralizado adaptativo
 
-# IDEA:
-# - Tomar el color base de la carretera para extraer sólo zonas que correspondan
-# - Ajustar con apertura/cierre las formas que puede tomar la carretera
-# - RGB2HSV
-# - BGR2HLS
-"""
-Approach:
-  - Convertir la imagen de RGB a HSV
-  - Procesar sólo el canal H
-  - Umbralizarlo
-  ***- Hacer opening/closing para deshacerse de patches pequeños
-  - Aplicar filtro de medianas para eliminar ruido una vez umbralizado
-  - cv.findContours (?)
-
-Progreso:
-  - conseguidos buenos resultados con umbralización
-  - errores en la última imágen
-    -> idea: hacer el threshold variable
-
-"""
+##### Funciones auxiliares de cargado/registro de imágenes #####
 
 def getNames(n,name):
   names=[]
@@ -65,13 +48,7 @@ def save_imgs(imgs, names, path):
     save_img(imgs[i],names[i],path)
     i+=1
 
-def umbr(image, thres):
-  u = image.copy()
-  u[u<thres]=0
-  u[u>=thres]=1
-  return u
-
-def load_imgs():
+def load():
   gts, imgs = [],[]
   # Se cargan las imágenes de ejemplo
   for img in os.listdir(imgspath):
@@ -97,102 +74,83 @@ def shown(imgs):
     cv.destroyWindow("win"+str(i))
     i+=1
 
-def toHsv(imgs):
-  hsv = []
-  for img in imgs:
-    hsv.append(cv.cvtColor(img,cv.COLOR_RGB2HSV))
-  return hsv
+##### Funciones auxiliares de manipulación de imágenes #####
 
-
-
-def getHues(imgs):
-  hues = []
-  for img in imgs:
-    hues.append(cv.cvtColor(img,cv.COLOR_RGB2HSV)[:,:,0])
-  return hues
-
-def getHues2(imgs):
-  hues = []
-  for img in imgs:
-    hues.append(cv.cvtColor(img,cv.COLOR_RGB2HLS)[:,:,0])
-  return hues
-
-def ex(hue):
-  ret, thr = cv.threshold(hue, 127, 255, cv.THRESH_TOZERO_INV) #Importante que sea invertido
-  ret, thr = cv.threshold(thr, 50, 150, cv.THRESH_BINARY_INV)
-  shown([u1,u2])
-
-def gaussImg(img,n):
-  return cv.GaussianBlur(img,(n,n),0)
+# def gaussImg(img,n):
+#   return cv.GaussianBlur(img,(n,n),0)
 
 def gaussImgs(imgs,n):
   gs = []
-  for i in range(0,len(imgs)):
-    gs.append(gaussImg(imgs[i],n))
+  for img in imgs:
+    gs.append(cv.GaussianBlur(img,(n,n),0))
   return gs
 
-def getThres(imgs):
+# def getThres(imgs, rango=[]):
+#   thres = []
+#   for img in imgs:
+#     if rango==[]:
+#       lim1, lim2 = (img.min()+img.max())/3, 255
+#     else:
+#       lim1, lim2 = rango
+#     thr = cv.threshold(img, lim1, lim2, cv.THRESH_BINARY)[1]
+#     thres.append(thr)
+#   return thres
+
+def getThres(imgs, lims, div):
   thres = []
   for img in imgs:
-    lim = (img.min()+img.max())/3
-    thr = cv.threshold(img, lim, 255, cv.THRESH_BINARY)[1]
+    if lims==[]:
+      lim1 = (img.min()+img.max())/div
+      lim2 = 255
+    else:
+      lim1, lim2 = lims
+    thr = cv.threshold(img, lim1, lim2, cv.THRESH_BINARY)[1]
     thres.append(thr)
   return thres
 
-def getOpenings(imgs, kernel):
+"""
+Con BRG2HSV -> thresh[80/90,115/120]
+"""
+
+def getOpenings(imgs, kernel, n):
   if kernel==[]:
-    kernel = np.ones((4,4), dtype='uint8')
+    kernel = np.ones((n,n), dtype='uint8')
   openings = []
   for img in imgs:
     o = cv.morphologyEx(img, cv.MORPH_OPEN, kernel)
     openings.append(o)
   return openings
 
-def kern(n):
+def getHues(imgs, code):
+  hues = []
+  for img in imgs:
+    hues.append(cv.cvtColor(img, codes[code])[:,:,0])
+  return hues
+
+def compare(i1, i2):
   """
-  Dado un número n devuelve un kernel de tamaño nxn.
-  (simplifica la generación de kernels)
+  Función que compara dos imágenes (np.array) y guarda sus scores
+  según las métricas de F1 y Jaccard.
   """
-  return np.ones((n,n), dtype='uint8')
+  array1, array2 = i1.flatten(),i2.flatten()
+  scores = {}
+  scores['f1-micro'] = f1_score(array1, array2, average='micro')
+  scores['f1-macro'] = f1_score(array1, array2, average='macro')
+  scores['f1-none'] = f1_score(array1, array2, average=None)
+  scores['jc-micro'] = jaccard_score(array1, array2, average='micro')
+  scores['jc-macro'] = jaccard_score(array1, array2, average='macro')
+  scores['jc-none'] = jaccard_score(array1, array2, average=None)
+  return scores
 
-def test(n):
-  imgs, gts = load_imgs()
-  huesv = getHues(imgs)
-  huesl = getHues2(imgs)
-  thv = getThres(huesv)
-  thl = getThres(huesl)
-  # shown([imgs[n],huesv[n],huesl[n],thv[n],thl[n],gts[n]])
-  return imgs, gts, huesv, huesl, thl
-
-# def exp1(imgs, n):
-#   imghue = cv.cvtColor(imgs[n],cv.COLOR_RGB2HSV)[:,:,0]
-#   smoothimg = cv.GaussianBlur(imghue, (5,5), 0)
-#   thresh = cv.threshold(smoothimg, cv.THRESH_BINARY)[1]
-#   shown([imghue,smoothimg,thresh])
-
-def exp1(imgs,n):
-  hues = getHues(imgs)
-  smooths = gaussImgs(hues,5)
-  threshs = getThres(smooths)
-  if n>0:
-    show([hues[n],smooths[n],threshs[n]])
-  else:
-    shown(hues+smooths+threshs)
-  return hues, smooths, threshs
-
+def listcompare(l1, l2):
+  scores = {}
+  for i in range(len(l1)):
+    scores[i] = compare(l1[i], l2[i])
+  return scores
 
 def main():
-  imgs, gts = load_imgs()
-  # hues = []
-  # for img in imgs:
-  #   hues.append(cv.cvtColor(img,cv.COLOR_RGB2HSV)[:,:,0])
-  hues = getHues(imgs)
-  # shown(hues,1)
-  # save_imgs(hues,names(len(hues),"hsv""),hpath)
-  thres = getThres(hues)
-  # save_imgs(thres,names(len(thres),"thres"),thrspath)
-  # show(thres)
-  openings = getOpenings(thres, [])
+  imgs, gts = load()
+
 
 
 if __name__ == "__main__":
