@@ -1,8 +1,10 @@
 import os
 import numpy as np
 import cv2 as cv
+import math
 import matplotlib.pyplot as plt
 from sklearn.metrics import f1_score, jaccard_score
+from sklearn.metrics.pairwise import cosine_similarity
 
 gtspath = "./materiales/gt/"
 imgspath = "./materiales/img/"
@@ -98,6 +100,11 @@ def gaussImgs(imgs,n):
 #     thres.append(thr)
 #   return thres
 
+def getThres1(img, lim, div):
+  if lim==0:
+    lim = (img.min()+img.max())/div
+  return cv.threshold(img, lim, 255, cv.THRESH_BINARY)[1]
+
 def getThres(imgs, lim, div):
   thres = []
   for img in imgs:
@@ -126,16 +133,82 @@ def getThresOtsu(imgs):
     thres.append(thr)
   return thres
 
-def getOpening(img, kernel, n)
+def getKernel(n):
+  return np.ones((n,n), dtype=np.uint8)
 
-def getOpenings(imgs, kernel, n):
-  if kernel==[]:
-    kernel = np.ones((n,n), dtype='uint8')
+def getOpening(img, n):
+  return cv.morphologyEx(img, cv.MORPH_OPEN, getKernel(n))
+
+def getOpenings(imgs, n):
   openings = []
   for img in imgs:
-    o = cv.morphologyEx(img, cv.MORPH_OPEN, kernel)
-    openings.append(o)
+    openings.append(getOpening(img, n))
   return openings
+
+def getErosion(img, n):
+  return cv.erode(img, getKernel(n), iterations=1)
+
+def getErosions(imgs, n):
+  erosions = []
+  for img in imgs:
+    erosions.append(getErosion(img, n))
+  return erosions
+
+def getDilate(img, n):
+  return cv.dilate(img, getKernel(n), iterations=1)
+
+def getDilatations(imgs, n):
+  dilatations = []
+  for img in imgs:
+    dilatations.append(getDilate(img, n))
+  return dilatations
+
+"""
+Erosión con kernels bajos
+
+"""
+
+def getMedians(imgs, n):
+  ms = []
+  for i in imgs:
+    ms.append(cv.medianBlur(i,n))
+  return ms
+
+
+def getEval(img, gt, metr):
+  """
+  Las imágenes deben ser binarias.
+  """
+  m, n = img.shape
+  vp, vn, fp, fn = 0,0,0,0
+  for i in range(m):
+    for j in range(n):
+      if (img[i,j]==1):
+        if (gt[i,j]==1):
+          vp+=1
+        else:
+          fp+=1
+      else:
+        if (gt[i,j]==1):
+          fn+=1
+        else:
+          vn+=1
+  if ("sens" in metr):
+    return vp/(vp+fn)
+  elif ("esp" in metr):
+    return vn/(vn+fp)
+  elif ("prec" in metr):
+    return vp/(vp+fp)
+  elif ("sim" in metr):
+    p, s = vp/(vp+fp), vp/(vp+fn)
+    return 1-(math.sqrt(((1-p)**2)+((1-s)**2))/math.sqrt(2))
+  elif ("frac" in metr):
+    return 1-((fp+fn)/gt.sum())
+  elif ("cos" in metr):
+    return cosine_similarity(img, gt)
+  else:
+    return [vp, fp, vn, fn]
+
 
 """
 Kernels:
@@ -220,10 +293,14 @@ def exp2():
 
 ###################
 
-def main():
-  imgs, gts = load()
+imgs, gts = load()
+hues = getHues(imgs, "bgr2hsv")
+hues2 = getHues(imgs, "rgb2hsv")
+gs = gaussImgs(hues, 5)
+gs2 = gaussImgs(hues2, 5)
+# ts = getThres(gs, [80,255], 0)
+ts = getThres(gs, 80, 0)
+ts2 = invertList(getThres(gs2, 50, 0))
 
-
-
-if __name__ == "__main__":
-  main()
+es = getErosions(gs, 3)
+ms = getMedians(gs, 3)
