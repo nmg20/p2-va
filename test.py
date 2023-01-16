@@ -150,6 +150,7 @@ def listcompare(l1, l2):
 
 def main():
   imgs, gts = load()
+  
 
 
 
