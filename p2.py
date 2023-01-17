@@ -5,19 +5,32 @@ import math
 import matplotlib.pyplot as plt
 from sklearn.metrics import f1_score, jaccard_score
 from sklearn.metrics.pairwise import cosine_similarity
+import skimage.morphology as sm
+
+##############################
+"""
+Dudas:
+  - Aplicar gaussiana antes de operadores morfológicos(?)
+  - Aplicar primero dilatación para preservar las carreteras y luego erosión
+    -> Cierre
+  - Umbralización adaptativa(?)
+  - Umbralización binaria parametrizada por la media(?)
+  - Aplicar thinning/skeletization
+
+
+"""
+##############################
+
+# Rn usando bgr2hls y funciona mejor sobre todo en las 2 últimas
+# Ostu -> threshold muy básico -> umbral adaptativo
+# Erosión con kernels bajos para no deformar demasiado las carreteras
 
 gtspath = "./materiales/gt/"
 imgspath = "./materiales/img/"
 hpath = "./exp/hues/"
 thrspath = "./exp/thres/"
 miscpath = "./exp/misc/"
-"""
-Códigos de conversión de colores
-  RGB2HSV = 41
-  BGR2HSV = 40
-  RGB2HLS = 53
-  BGR2HLS = 52
-"""
+
 codes = {
   "bgr2hsv":40,
   "rgb2hsv":41,
@@ -25,10 +38,17 @@ codes = {
   "rgb2hls":53
 }
 
-# Rn usando bgr2hls y funciona mejor sobre todo en las 2 últimas
-# Aplicar umbralizado adaptativo
+# Hit or miss
+# gradiente morfologico antes de umbralizar
+# Aplicar umbralizado adaptativo -> zonas mas grandes
+# Umbralizacion con histeresis
 
-# Ostu -> threshold muy básico -> umbral adaptativo
+"""
+PROBAR:
+  - Umbralización con histéresis
+  - Umbralizado adaptativo
+  - Gradiente morfológico
+"""
 
 ##### Funciones auxiliares de cargado/registro de imágenes #####
 
@@ -51,6 +71,12 @@ def save_imgs(imgs, names, path):
   while i<len(imgs):
     save_img(imgs[i],names[i],path)
     i+=1
+
+def load_dir(path):
+  imgs = []
+  for i in os.listdir(path):
+    imgs.append(cv.imread(path+i,cv.IMREAD_GRAYSCALE)/255.)
+  return imgs
 
 def load():
   gts, imgs = [],[]
@@ -83,22 +109,21 @@ def shown(imgs):
 # def gaussImg(img,n):
 #   return cv.GaussianBlur(img,(n,n),0)
 
+#################### SUAVIZADO ####################
+
 def gaussImgs(imgs,n):
   gs = []
   for img in imgs:
     gs.append(cv.GaussianBlur(img,(n,n),0))
   return gs
 
-# def getThres(imgs, rango=[]):
-#   thres = []
-#   for img in imgs:
-#     if rango==[]:
-#       lim1, lim2 = (img.min()+img.max())/3, 255
-#     else:
-#       lim1, lim2 = rango
-#     thr = cv.threshold(img, lim1, lim2, cv.THRESH_BINARY)[1]
-#     thres.append(thr)
-#   return thres
+def getMedians(imgs, n):
+  ms = []
+  for i in imgs:
+    ms.append(cv.medianBlur(i,n))
+  return ms
+
+#################### THRESHOLDING ####################
 
 def getThres1(img, lim, div):
   if lim==0:
@@ -106,10 +131,16 @@ def getThres1(img, lim, div):
   return cv.threshold(img, lim, 255, cv.THRESH_BINARY)[1]
 
 def getThres(imgs, lim, div):
+  """
+  Aplica umbralización a todas las imágenes en una lista.
+   - lim = umbral
+   - div = división de la media (max+min)
+  """
   thres = []
   for img in imgs:
     if lim==0:
-      lim = (img.min()+img.max())/div
+      lim = (img.min()+img.max())//div
+    # print("MIN: ",img.min(),"\tMAX: ",img.max(),"\tLIM: ",lim)
     thr = cv.threshold(img, lim, 255, cv.THRESH_BINARY)[1]
     thres.append(thr)
   return thres
@@ -133,17 +164,22 @@ def getThresOtsu(imgs):
     thres.append(thr)
   return thres
 
+def getAdaptiveThres(img, n):
+  # Probar dividiendo la imagen en una matriz 5x5
+  # Gaussiano
+  m = img.shape[0]//n
+  if m%2==0:
+    m+=1
+  # img2 = cv.adaptiveThreshold(img, 255, cv.ADAPTIVE_THRESH_MEAN_C,
+  #   cv.THRESH_BINARY, (m//5)+1, 2)
+  img2 = cv.adaptiveThreshold(img, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C,
+    cv.THRESH_BINARY, m, 1)
+  return img2
+
+############## OPERACIONES MORFOLÓGICAS ##############
+
 def getKernel(n):
   return np.ones((n,n), dtype=np.uint8)
-
-def getOpening(img, n):
-  return cv.morphologyEx(img, cv.MORPH_OPEN, getKernel(n))
-
-def getOpenings(imgs, n):
-  openings = []
-  for img in imgs:
-    openings.append(getOpening(img, n))
-  return openings
 
 def getErosion(img, n):
   return cv.erode(img, getKernel(n), iterations=1)
@@ -163,17 +199,64 @@ def getDilatations(imgs, n):
     dilatations.append(getDilate(img, n))
   return dilatations
 
-"""
-Erosión con kernels bajos
+def getOpening(img, n):
+  return cv.morphologyEx(img, cv.MORPH_OPEN, getKernel(n))
 
-"""
+def getOpenings(imgs, n):
+  openings = []
+  for img in imgs:
+    openings.append(getOpening(img, n))
+  return openings
 
-def getMedians(imgs, n):
-  ms = []
-  for i in imgs:
-    ms.append(cv.medianBlur(i,n))
-  return ms
+def getClosing(img, n):
+  return cv.morphologyEx(img, cv.MORPH_CLOSE, getKernel(n))
 
+def getClosings(imgs, n):
+  closings = []
+  for img in imgs:
+    closings.append(getClosing(img, n))
+  return closings
+
+def getHMKernel(size, n):
+  # Arrys horizontales
+  z = np.zeros((size,1), dtype="int")
+  o = np.ones((size,1), dtype="int")
+  while n>1:
+    o = np.concatenate((o,o), axis=1)
+    n-=1
+  return np.concatenate((z, np.concatenate((o,z),axis=1)), axis=1)
+
+def getHitOrMiss(img,kernel):
+  return cv.morphologyEx(img, cv.MORPH_HITMISS,kernel)
+
+def getHitsOrMisses(img,sizes=[],ns=[]):
+  """
+  Aplica la transformada Hit-or-Miss recusivamente con kernels horizontales
+  de tamaño y densidad variantes.
+    -img: np.array de tipo uint8
+  """
+  # sizes = 3,4,5 | ns = 1,2,3
+  # hs = {}
+  hs = []
+  for s in sizes:
+    for n in ns:
+      # hs[s]={n:getHitOrMiss(img, getHMKernel(s,n))}
+      hs.append(getHitOrMiss(img, getHMKernel(s,n)))
+  return hs
+
+
+############## SKELETIZATION(?) ##############
+
+def sk2Array(sk):
+  arr = np.zeros(sk.shape)
+  for i in range(sk.shape[0]):
+    for j in range(sk.shape[1]):
+      if sk[i,j]==True:
+        arr[i,j]=255.
+  return arr
+
+
+#################### EVALUACIÓN ####################
 
 def getEval(img, gt, metr):
   """
@@ -300,7 +383,19 @@ gs = gaussImgs(hues, 5)
 gs2 = gaussImgs(hues2, 5)
 # ts = getThres(gs, [80,255], 0)
 ts = getThres(gs, 80, 0)
-ts2 = invertList(getThres(gs2, 50, 0))
+# ts2 = invertList(getThres(gs2, 50, 0))
 
+# Erosiones
 es = getErosions(gs, 3)
+# Aperturas
+ops = getOpenings(gs, 5)
+# Cierres
+cs = getClosings(gs, 5)
+
+# Suavizado de medias
 ms = getMedians(gs, 3)
+# thin1 = sk2Array(sm.thin(ts[0],1))
+# thin2 = sk2Array(sm.thin(ts[0],2))
+# thin3 = sk2Array(sm.thin(ts[0],3))
+
+ts50 = load_dir("./exp/exp3/thresh50/")
