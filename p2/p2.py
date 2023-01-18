@@ -56,7 +56,7 @@ def getNames(n,name):
 def save_imgs(imgs, names, path):
   for i in range(len(imgs)):
     # save_img(imgs[i],names[i],path)
-    cv.imwrite(path+names[i]+".png", imgs[i])
+    cv.imwrite(path+str(names[i])+".png", imgs[i]*255)
 
 def load_dir(path):
   imgs = []
@@ -251,7 +251,7 @@ def getRoadLength(img):
   presente en la imagen.
   -> número de píxeles blancos en la imagen.
   """
-  return img.sum()
+  return g.sum()
 
 ###################
 
@@ -261,14 +261,12 @@ def getVals(d):
     vals.append((k,d[k]))
   return vals
 
-def processReports(file, names, reports):
-  file = Path(file)
-  file.touch(exist_ok=True)
-  with open(file,"a") as f:
+def processReports(names, reports):
+  with open("report.txt","a") as f:
     for i in range(len(reports)):
-      f.write("Métricas para "+names[i]+"\n")
+      f.write("Métricas para ",names[i],"\n")
       for key,value in getVals(reports[i]):
-        f.write(key+": "+str(value)+"\n")
+        f.write(key,": ",value,"\n")
 
 
 def processImgs(imgs,gts):
@@ -320,12 +318,9 @@ def main():
   names = getNames(len(segms),"segmentacion_img")
   if not os.path.exists(dest):
     os.mkdir(dest)
-  # save_imgs(names,segms,dest)
-  for i in range(len(segms)):
-    # save_img(imgs[i],names[i],path)
-    cv.imwrite(dest+names[i]+".png", segms[i])
+  save_imgs(names,segms,dest)
   # Volcamos los resultados en un fichero
-  processReports("results.txt",names, reports)
+  processReports(names, reports)
 
   if args.v:
     for i in range(len(segms)):
@@ -333,7 +328,7 @@ def main():
       if args.m:
         print("Métricas de evaluación de la segmentación:")
         print(reports[i])
-      show(segms[i])
+      show(sgems[i])
 
 
 
