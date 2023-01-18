@@ -28,6 +28,88 @@ codes = {
 
 ##### Funciones auxiliares de cargado/registro de imágenes #####
 
+###################
+"""
+Con BRG2HSV -> thresh[80/90,115/120]
+"""
+def exp1():
+  # imgs, gts = load_imgs()
+  hues = getHues(imgs, "bgr2hsv")
+  gs = gaussImgs(hues, 5)
+  # ts = getThres(gs, [80,255], 0)
+  ts = getThres(gs, 80, 0)
+  tt = cv.threshold(gs[0], 0, 255, cv.THRESH_BINARY_INV | cv.THRESH_OTSU)[1]
+  return imgs, gts, hues, gs, ts, tt
+
+def exp2():
+  # imgs, gts = load()
+  hues = getHues(imgs, "bgr2hsv")
+  hues2 = getHues(imgs, "rgb2hsv")
+  gs = gaussImgs(hues, 5)
+  gs2 = gaussImgs(hues2, 5)
+  # ts = getThres(gs, [80,255], 0)
+  ts = getThres(gs, 80, 0)
+  ts2 = invertList(getThres(gs2, 50, 0))
+  tt = cv.threshold(gs[0], 0, 255, cv.THRESH_BINARY_INV | cv.THRESH_OTSU)[1]
+  return imgs, gts, hues, gs, ts, ts2
+
+def exp3():
+  i=imgs[0][:,:,0]
+  g = gaussImgs([i],5)[0]
+  # t = getThres1(g,100,0)
+  t = getThres1(g,0,2.5,0)
+  o = getOpening(t,5)
+  c = getClosing(t,5)
+  # shown([i,g,t,o])
+  go = getOpening(g,5)
+  gc = getClosing(g,5)
+  tgo = getThres1(go, 100,0,0)
+  tgc = getThres1(gc, 100,0,0)
+  oss = getOpening(go,15)
+  shown([tgo,tgc,go-oss])
+
+def exp_rgb():
+  hues = getHues(imgs,"rgb2hsv")
+  gs = gaussImgs(hues, 5)
+  oss = getOpenings(gs,5)
+  hm = getHitOrMiss(oss[0],getHMKernel(5,2))
+
+def exp_acot():
+  hues = getHues(imgs,"rgb2hsv")
+  gs = gaussImgs(hues, 5)
+  a2 = getAcots(gs)
+  oss = getOpenings(a2,3)-getOpenings(a2,11)
+  cs = getClosings(oss,5)
+  shown(cs)
+
+imgs, gts = load_imgs(imgspath,gtspath)
+hues = getHues(imgs, "bgr2hsv")
+hues2 = getHues(imgs, "rgb2hsv")
+# gs = gaussImgs(hues, 5)
+# gs2 = gaussImgs(hues2, 5)
+# # ts = getThres(gs, [80,255], 0)
+# ts = getThres(gs, 80, 0,0)
+# # ts2 = invertList(getThres(gs2, 50, 0))
+# # Erosiones
+# es = getErosions(gs, 3)
+# # Aperturas
+# ops = getOpenings(gs, 5)
+# # Cierres
+# cs = getClosings(gs, 5)
+# # Suavizado de medias
+# ms = getMedians(gs, 3)
+
+hs1, hs2 = getHues(imgs, "bgr2hsv"), getHues(imgs, "")
+gs1, gs2 = gaussImgs(hs1, 5), gaussImgs(hs2, 5)
+ms1, ms2 = getMedians(hs1, 5), getMedians(hs2, 5)
+gst, mst = [], []
+for i in range(len(hs1)):
+  gst.append(gs1[i]+gs2[i])
+  mst.append(ms1[i]+ms2[i])
+csg, csm = getClosings(gst,5), getClosings(mst,5)
+osg, osm = getOpenings(gst,5), getOpenings(mst,5)
+tsg0, tsm0 = getThres(gst,190,0,0), getThres(mst,190,0,0)
+
 def getNames(n,name):
   names=[]
   for i in np.arange(0,n):
