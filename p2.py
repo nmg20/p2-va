@@ -1,4 +1,6 @@
 import os
+import argparse
+from pathlib import Path
 import numpy as np
 import cv2 as cv
 import math
@@ -6,6 +8,7 @@ import matplotlib.pyplot as plt
 from sklearn.metrics import f1_score, jaccard_score
 from sklearn.metrics.pairwise import cosine_similarity
 import skimage.morphology as sm
+
 
 ##############################
 """
@@ -35,9 +38,12 @@ codes = {
   "bgr2hsv":40,
   "rgb2hsv":41,
   "bgr2hls":52,
-  "rgb2hls":53
+  "rgb2hls":53,
+  "":0
 }
 
+umbral_sobre = 0.7
+umbral_sub = 0.5
 # Hit or miss
 # gradiente morfologico antes de umbralizar
 # Aplicar umbralizado adaptativo -> zonas mas grandes
@@ -51,6 +57,19 @@ PROBAR:
 """
 
 ##### Funciones auxiliares de cargado/registro de imágenes #####
+
+def dir_path(path):
+    if os.path.isdir(path):
+        return path
+    else:
+        raise argparse.ArgumentTypeError(f"readable_dir:{path} is not a valid path")
+
+def validate_file(f):
+    if not os.path.exists(f):
+        # Argparse uses the ArgumentTypeError to give a rejection message like:
+        # error: argument input: x does not exist
+        raise argparse.ArgumentTypeError("{0} does not exist".format(f))
+    return f
 
 def getNames(n,name):
   names=[]
@@ -78,7 +97,7 @@ def load_dir(path):
     imgs.append(cv.imread(path+i,cv.IMREAD_GRAYSCALE)/255.)
   return imgs
 
-def load():
+def load_imgs(imgspath, gtspath):
   gts, imgs = [],[]
   # Se cargan las imágenes de ejemplo
   for img in os.listdir(imgspath):
@@ -125,12 +144,15 @@ def getMedians(imgs, n):
 
 #################### THRESHOLDING ####################
 
-def getThres1(img, lim, div):
+def getThres1(img, lim, div, inv):
   if lim==0:
-    lim = (img.min()+img.max())/div
-  return cv.threshold(img, lim, 255, cv.THRESH_BINARY)[1]
+    lim = (int(img.min())+int(img.max()))/div
+  if inv:
+    return cv.threshold(img, lim, 255, cv.THRESH_BINARY_INV)[1]
+  else:
+    return cv.threshold(img, lim, 255, cv.THRESH_BINARY)[1]
 
-def getThres(imgs, lim, div):
+def getThres(imgs, lim, div, inv):
   """
   Aplica umbralización a todas las imágenes en una lista.
    - lim = umbral
@@ -138,31 +160,16 @@ def getThres(imgs, lim, div):
   """
   thres = []
   for img in imgs:
-    if lim==0:
-      lim = (img.min()+img.max())//div
+    # if lim==0:
+    #   lim = (int(img.min())+int(img.max()))//div
     # print("MIN: ",img.min(),"\tMAX: ",img.max(),"\tLIM: ",lim)
-    thr = cv.threshold(img, lim, 255, cv.THRESH_BINARY)[1]
-    thres.append(thr)
+    # thr = cv.threshold(img, lim, 255, cv.THRESH_BINARY)[1]
+    thres.append(getThres1(img,lim,div,inv))
   return thres
 
 """
 Con BRG2HSV -> thresh[80/90,115/120]
 """
-
-def otsus(imgs):
-  ts=[]
-  for i in imgs:
-    v=filters.threshold_otsu(i)
-    t.append(cv.threshold(i,v,255,cv.THRESH_BINARY)[1])
-  return t
-
-def getThresOtsu(imgs):
-  thres = []
-  for img in imgs:
-    thr = cv.threshold(img, 0, 255, cv.THRESH_BINARY_INV | 
-      cv.THRESH_OTSU)[1]
-    thres.append(thr)
-  return thres
 
 def getAdaptiveThres(img, n):
   # Probar dividiendo la imagen en una matriz 5x5
@@ -173,8 +180,25 @@ def getAdaptiveThres(img, n):
   # img2 = cv.adaptiveThreshold(img, 255, cv.ADAPTIVE_THRESH_MEAN_C,
   #   cv.THRESH_BINARY, (m//5)+1, 2)
   img2 = cv.adaptiveThreshold(img, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C,
-    cv.THRESH_BINARY, m, 1)
+    cv.THRESH_BINARY_INV, m, 6)
   return img2
+
+def acot(img, lims):
+  r = np.zeros(img.shape, dtype=np.uint8)
+  for i in range(img.shape[0]):
+    for j in range(img.shape[1]):
+      if img[i,j]>lims[0] and img[i,j]<lims[1]:
+        r[i,j]=255.
+        # r[i,j]=img[i,j]
+  return r
+
+def getAcots(imgs):
+  a2 = []
+  for i in imgs:
+    l = i.min()+i.max()
+    lims = [l/2,l*2/3]
+    a2.append(acot(i,lims))
+  return a2
 
 ############## OPERACIONES MORFOLÓGICAS ##############
 
@@ -217,6 +241,17 @@ def getClosings(imgs, n):
     closings.append(getClosing(img, n))
   return closings
 
+# def cm(matrix):
+#   return np.flip(matrix,axis=1)
+
+# def getDiagKernel(size,n):
+#   o = np.ones((1,size))
+#   a0,a1,a2 = np.diag(o), np.diag(o,k=1), np.diag(o,k=-1)
+#   a=a1
+#   while n>1:
+
+
+
 def getHMKernel(size, n):
   # Arrys horizontales
   z = np.zeros((size,1), dtype="int")
@@ -241,8 +276,14 @@ def getHitsOrMisses(img,sizes=[],ns=[]):
   for s in sizes:
     for n in ns:
       # hs[s]={n:getHitOrMiss(img, getHMKernel(s,n))}
-      hs.append(getHitOrMiss(img, getHMKernel(s,n)))
+      hs.append(getHitOrMiss(img, getHMKernel(s,n))+getHitOrMiss(img, getHMKernel(s,n).T))
   return hs
+
+def getHMList(imgs, kernel):
+  hms = []
+  for img in imgs:
+    hms.append(getHitOrMiss(img,kernel))
+  return hms
 
 
 ############## SKELETIZATION(?) ##############
@@ -258,7 +299,7 @@ def sk2Array(sk):
 
 #################### EVALUACIÓN ####################
 
-def getEval(img, gt, metr):
+def getEval(img, gt):
   """
   Las imágenes deben ser binarias.
   """
@@ -276,22 +317,28 @@ def getEval(img, gt, metr):
           fn+=1
         else:
           vn+=1
-  if ("sens" in metr):
-    return vp/(vp+fn)
-  elif ("esp" in metr):
-    return vn/(vn+fp)
-  elif ("prec" in metr):
-    return vp/(vp+fp)
-  elif ("sim" in metr):
-    p, s = vp/(vp+fp), vp/(vp+fn)
-    return 1-(math.sqrt(((1-p)**2)+((1-s)**2))/math.sqrt(2))
-  elif ("frac" in metr):
-    return 1-((fp+fn)/gt.sum())
-  elif ("cos" in metr):
-    return cosine_similarity(img, gt)
-  else:
-    return [vp, fp, vn, fn]
+  ev = {}
+  ev["sens"]=vp/(vp+fn)
+  ev["esp"]=vn/(vn+fp)
+  ev["prec"]=vn/(vn+fp)
+  p, s = vp/(vp+fp), vp/(vp+fn)
+  ev["sim"]=1-(math.sqrt(((1-p)**2)+((1-s)**2))/math.sqrt(2))
+  ev["frac"]=1-((fp+fn)/gt.sum())
+  ev["cos"]=cosine_similarity(img, gt)
+  ev["sobresegm"]=(ev["prec"]>umbral_sobre)
+  ev["subsegm"]=(ev["esp"]>umbral_sub)
+  array1, array2 = img.flatten(), gt.flatten()
+  ev["f1"]=f1_score(array1, array2, average=None)
+  ev["jacc"]=jaccard_score(array1, array2, average=None)
+  return ev
 
+def getRoadLength(img):
+  """
+  Devuelve la longitud total de la carretera (en píxeles)
+  presente en la imagen.
+  -> número de píxeles blancos en la imagen.
+  """
+  return g.sum()
 
 """
 Kernels:
@@ -307,54 +354,57 @@ kh5 = np.array([[0,0,0,0,0],[1,1,1,1,1],[0,0,0,0,0]], dtype='uint8')
 def getHues(imgs, code):
   hues = []
   for img in imgs:
-    hues.append(cv.cvtColor(img, codes[code])[:,:,0])
+    if code==0:
+      hues.append(img[:,:,0])
+    else:
+      hues.append(cv.cvtColor(img, codes[code])[:,:,0])
   return hues
 
-def compare(i1, i2):
-  """
-  Función que compara dos imágenes (np.array) y guarda sus scores
-  según las métricas de F1 y Jaccard.
-  """
-  array1, array2 = i1.flatten(),i2.flatten()
-  scores = {}
-  scores['f1-micro'] = f1_score(array1, array2, average='micro')
-  scores['f1-macro'] = f1_score(array1, array2, average='macro')
-  scores['f1-none'] = f1_score(array1, array2, average=None)
-  scores['jc-micro'] = jaccard_score(array1, array2, average='micro')
-  scores['jc-macro'] = jaccard_score(array1, array2, average='macro')
-  scores['jc-none'] = jaccard_score(array1, array2, average=None)
-  return scores
+# def compare(i1, i2):
+#   """
+#   Función que compara dos imágenes (np.array) y guarda sus scores
+#   según las métricas de F1 y Jaccard.
+#   """
+#   array1, array2 = i1.flatten(),i2.flatten()
+#   scores = {}
+#   scores['f1-micro'] = f1_score(array1, array2, average='micro')
+#   scores['f1-macro'] = f1_score(array1, array2, average='macro')
+#   scores['f1-none'] = f1_score(array1, array2, average=None)
+#   scores['jc-micro'] = jaccard_score(array1, array2, average='micro')
+#   scores['jc-macro'] = jaccard_score(array1, array2, average='macro')
+#   scores['jc-none'] = jaccard_score(array1, array2, average=None)
+#   return scores
 
-def listCompare(l1, l2):
-  scores = {}
-  for i in range(len(l1)):
-    scores[i] = compare(l1[i], l2[i])
-  return scores
+# def listCompare(l1, l2):
+#   scores = {}
+#   for i in range(len(l1)):
+#     scores[i] = compare(l1[i], l2[i])
+#   return scores
 
-def invertList(l):
-  result = []
-  for e in l:
-    result.append(255-e)
-  return result
+# def invertList(l):
+#   result = []
+#   for e in l:
+#     result.append(255-e)
+#   return result
 
-def blendLists(l1, l2, weights=[]):
-  """
-  Fusiona imágenes de dos listas distintas, ponderadas según weights.
-  Las listas deben tener las mismas dimensiones.
-  """
-  result = []
-  if weights==[]:
-    p1, p2 = 0.5, 0.5
-  else:
-    p1, p2 = weights
-  for i in np.arange(len(l1)):
-    result.append(l1[i]*p1+l2[i]*p2)
-  return result
+# def blendLists(l1, l2, weights=[]):
+#   """
+#   Fusiona imágenes de dos listas distintas, ponderadas según weights.
+#   Las listas deben tener las mismas dimensiones.
+#   """
+#   result = []
+#   if weights==[]:
+#     p1, p2 = 0.5, 0.5
+#   else:
+#     p1, p2 = weights
+#   for i in np.arange(len(l1)):
+#     result.append(l1[i]*p1+l2[i]*p2)
+#   return result
 
 ###################
 
 def exp1():
-  imgs, gts = load()
+  # imgs, gts = load_imgs()
   hues = getHues(imgs, "bgr2hsv")
   gs = gaussImgs(hues, 5)
   # ts = getThres(gs, [80,255], 0)
@@ -363,7 +413,7 @@ def exp1():
   return imgs, gts, hues, gs, ts, tt
 
 def exp2():
-  imgs, gts = load()
+  # imgs, gts = load()
   hues = getHues(imgs, "bgr2hsv")
   hues2 = getHues(imgs, "rgb2hsv")
   gs = gaussImgs(hues, 5)
@@ -374,15 +424,46 @@ def exp2():
   tt = cv.threshold(gs[0], 0, 255, cv.THRESH_BINARY_INV | cv.THRESH_OTSU)[1]
   return imgs, gts, hues, gs, ts, ts2
 
+def exp3():
+  i=imgs[0][:,:,0]
+  g = gaussImgs([i],5)[0]
+  # t = getThres1(g,100,0)
+  t = getThres1(g,0,2.5,0)
+  o = getOpening(t,5)
+  c = getClosing(t,5)
+  # shown([i,g,t,o])
+  go = getOpening(g,5)
+  gc = getClosing(g,5)
+  tgo = getThres1(go, 100,0,0)
+  tgc = getThres1(gc, 100,0,0)
+  oss = getOpening(go,15)
+  shown([tgo,tgc,go-oss])
+
+def exp_rgb():
+  hues = getHues(imgs,"rgb2hsv")
+  gs = gaussImgs(hues, 5)
+  oss = getOpenings(gs,5)
+  hm = getHitOrMiss(oss[0],getHMKernel(5,2))
+
+def exp_acot():
+  hues = getHues(imgs,"rgb2hsv")
+  gs = gaussImgs(hues, 5)
+  a2 = getAcots(gs)
+  oss = getOpenings(a2,3)-getOpenings(a2,11)
+  cs = getClosings(oss,5)
+  shown(cs)
+
+
+
 ###################
 
-imgs, gts = load()
+imgs, gts = load_imgs(imgspath,gtspath)
 hues = getHues(imgs, "bgr2hsv")
 hues2 = getHues(imgs, "rgb2hsv")
 gs = gaussImgs(hues, 5)
 gs2 = gaussImgs(hues2, 5)
 # ts = getThres(gs, [80,255], 0)
-ts = getThres(gs, 80, 0)
+ts = getThres(gs, 80, 0,0)
 # ts2 = invertList(getThres(gs2, 50, 0))
 
 # Erosiones
@@ -394,8 +475,57 @@ cs = getClosings(gs, 5)
 
 # Suavizado de medias
 ms = getMedians(gs, 3)
-# thin1 = sk2Array(sm.thin(ts[0],1))
-# thin2 = sk2Array(sm.thin(ts[0],2))
-# thin3 = sk2Array(sm.thin(ts[0],3))
+
+
+
+hs1, hs2 = getHues(imgs, "bgr2hsv"), getHues(imgs, "")
+gs1, gs2 = gaussImgs(hs1, 5), gaussImgs(hs2, 5)
+ms1, ms2 = getMedians(hs1, 5), getMedians(hs2, 5)
+gst, mst = [], []
+for i in range(len(hs1)):
+  gst.append(gs1[i]+gs2[i])
+  mst.append(ms1[i]+ms2[i])
+
+csg, csm = getClosings(gst,5), getClosings(gsm,5)
+osg, osm = getOpenings(gst,5), getOpenings(gsm,S5)
+
+tsg0, tsm0 = getThres(gst,190,0,0), getThres(mst,190,0,0)
+
+
 
 ts50 = load_dir("./exp/exp3/thresh50/")
+
+def processImgs(imgs,gts):
+  # Pasamos las imágenes a escala de grises
+  hues = getHues(imgs,"bgr2hsv")
+  # Suavizamos las imágenes con un filtro gaussiano
+  gs = gaussImgs(hues,5)
+
+  # Eliminar ruido con apertura
+
+  return result, report
+
+
+def main():
+  parser = argparse.ArgumentParser()
+  parser.add_argument('source_dir', help="carpeta con las imágenes a segmentar.",
+    type = dir_path)
+  parser.add_argument('target_dir', help="carpeta en la que guardar las imágenes segmentadas.",
+    type = dir_path)
+  parser.add_argument('-v', help="mostrar las imágenes segmentadas por pantalla.",
+    action='visualize')
+  parser.add_argument('-o', help="mostrar resultados de métricas de evaluación por pantalla.",
+    action='report')
+  args = parser.parse_args()
+  # Nombre de la carpeta que contiene las subcrpetas con las imágenes
+  # y los ground truths
+  src = args.source_dir
+  dest = args.target_dir
+  imgs,gts = load_imgs(src+"/img",src+"/gt")
+  segms, report = processImgs(imgs,gts)
+
+  print("")
+  for i in segms:
+    print(getRoadLength(i))
+
+

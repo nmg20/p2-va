@@ -151,6 +151,56 @@ def listcompare(l1, l2):
 def main():
   imgs, gts = load()
   
+def supresionNoMax(mag):
+  # Find the neighbouring pixels (b,c) in the rounded gradient direction
+# and then apply non-max suppression
+  M, N = mag.shape
+  Non_max = np.zeros((M,N), dtype= np.uint8)
+  for i in range(1,M-1):
+      for j in range(1,N-1):
+         # Horizontal 0
+          if (0 <= angle[i,j] < 22.5) or (157.5 <= angle[i,j] <= 180) or (-22.5 <= angle[i,j] < 0) or (-180 <= angle[i,j] < -157.5):
+              b = mag[i, j+1]
+              c = mag[i, j-1]
+          # Diagonal 45
+          elif (22.5 <= angle[i,j] < 67.5) or (-157.5 <= angle[i,j] < -112.5):
+              b = mag[i+1, j+1]
+              c = mag[i-1, j-1]
+          # Vertical 90
+          elif (67.5 <= angle[i,j] < 112.5) or (-112.5 <= angle[i,j] < -67.5):
+              b = mag[i+1, j]
+              c = mag[i-1, j]
+          # Diagonal 135
+          elif (112.5 <= angle[i,j] < 157.5) or (-67.5 <= angle[i,j] < -22.5):
+              b = mag[i+1, j-1]
+              c = mag[i-1, j+1]          
+          # Non-max Suppression
+          if (mag[i,j] >= b) and (mag[i,j] >= c):
+              Non_max[i,j] = mag[i,j]
+          else:
+              Non_max[i,j] = 0
+  return Non_max
+
+def umbralizacionHisteresis(Non_max, lowThreshold, highThreshold):
+  M, N = Non_max.shape
+  out = np.zeros((M,N), dtype= np.uint8)
+
+  strong_i, strong_j = np.where(Non_max >= highThreshold)
+  zeros_i, zeros_j = np.where(Non_max < lowThreshold)
+  weak_i, weak_j = np.where((Non_max <= highThreshold) & (Non_max >= lowThreshold))
+
+  out[strong_i, strong_j] = 255
+  out[zeros_i, zeros_j ] = 0
+  out[weak_i, weak_j] = 75
+  M, N = out.shape
+  for i in range(1, M-1):
+      for j in range(1, N-1):
+          if (out[i,j] == 75):
+              if 255 in [out[i+1, j-1],out[i+1, j],out[i+1, j+1],out[i, j-1],out[i, j+1],out[i-1, j-1],out[i-1, j],out[i-1, j+1]]:
+                  out[i, j] = 255
+              else:
+                  out[i, j] = 0
+  return out
 
 
 
