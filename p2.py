@@ -11,6 +11,18 @@ import skimage.morphology as sm
 
 ##############################
 
+"""
+Cambios a posteriori:
+  - Arreglado mecanismo para guardar las imágenes segmentadas
+  - Arreglada función para registrar las métricas de evaluación
+  - Arreglado workaround en getEval 
+    -> el nivel de la imagen segmentada tiene que ser 254, no 1
+  - Arreglados cálculos erróneos de sensibilidad y precisión
+
+
+"""
+
+
 gtspath = "./materiales/gt/"
 imgspath = "./materiales/imag/"
 hpath = "./exp/hues/"
@@ -206,7 +218,7 @@ def getEval(img, gt):
   vp, vn, fp, fn = 0,0,0,0
   for i in range(m):
     for j in range(n):
-      if (img[i,j]==1):
+      if (img[i,j]==254):
         if (gt[i,j]==1):
           vp+=1
         else:
@@ -218,9 +230,9 @@ def getEval(img, gt):
           vn+=1
   ev = {}
   # print("FP: ",fp,"\tVP: ",vp,"\tFN: ",fn)
-  ev["sens"]=vp/(vp+fn)
+  ev["sens"]=vp/(vp+vn)
   ev["esp"]=vn/(vn+fp)
-  ev["prec"]=vn/(vn+fp)
+  ev["prec"]=vp/(vp+fp)
   if (vp+fp)!=0:
     p = vp/(vp+fp)
   else:
@@ -297,45 +309,45 @@ def processImgs(imgs,gts):
   return segmentations, reports
 
 
-def main():
-  parser = argparse.ArgumentParser()
-  parser.add_argument('source_dir', help="carpeta con las imágenes a segmentar.",
-    type = dir_path)
-  parser.add_argument('target_dir', help="carpeta en la que guardar las imágenes segmentadas.",
-    type = dir_path)
-  parser.add_argument('-v', help="mostrar las imágenes segmentadas por pantalla.",
-    required=False, action="store_true")
-  parser.add_argument('-m', help="mostrar resultados de métricas de evaluación por pantalla.",
-    required=False, action="store_true")
-  args = parser.parse_args()
-  # Nombre de la carpeta que contiene las subcrpetas con las imágenes
-  # y los ground truths
-  src = args.source_dir
-  dest = args.target_dir+"results/"
-  # Cargamos las imágenes
-  imgs,gts = load_imgs(src+"/imag/",src+"/gt/")
-  # Procesamos las imágenes y las evaluamos contra sus ground truths.
-  segms, reports = processImgs(imgs,gts)
-  # Creamos un array de nombres para las imágenes y las guardamos
-  names = getNames(len(segms),"segmentacion_img")
-  if not os.path.exists(dest):
-    os.mkdir(dest)
-  # save_imgs(names,segms,dest)
+# def main():
+parser = argparse.ArgumentParser()
+parser.add_argument('source_dir', help="carpeta con las imágenes a segmentar.",
+  type = dir_path)
+parser.add_argument('target_dir', help="carpeta en la que guardar las imágenes segmentadas.",
+  type = dir_path)
+parser.add_argument('-v', help="mostrar las imágenes segmentadas por pantalla.",
+  required=False, action="store_true")
+parser.add_argument('-m', help="mostrar resultados de métricas de evaluación por pantalla.",
+  required=False, action="store_true")
+args = parser.parse_args()
+# Nombre de la carpeta que contiene las subcrpetas con las imágenes
+# y los ground truths
+src = args.source_dir
+dest = args.target_dir+"/results/"
+# Cargamos las imágenes
+imgs,gts = load_imgs(src+"/imag/",src+"/gt/")
+# Procesamos las imágenes y las evaluamos contra sus ground truths.
+segms, reports = processImgs(imgs,gts)
+# Creamos un array de nombres para las imágenes y las guardamos
+names = getNames(len(segms),"segmentacion_img")
+if not os.path.exists(dest):
+  os.mkdir(dest)
+# save_imgs(names,segms,dest)
+for i in range(len(segms)):
+  # save_img(imgs[i],names[i],path)
+  cv.imwrite(dest+names[i]+".png", segms[i])
+# Volcamos los resultados en un fichero
+processReports(dest+"results.txt",names, reports)
+
+if args.v:
   for i in range(len(segms)):
-    # save_img(imgs[i],names[i],path)
-    cv.imwrite(dest+names[i]+".png", segms[i])
-  # Volcamos los resultados en un fichero
-  processReports("results.txt",names, reports)
-
-  if args.v:
-    for i in range(len(segms)):
-      print("Longitud de la carretera:\t",getRoadLength(segms[i]),"píxeles.")
-      if args.m:
-        print("Métricas de evaluación de la segmentación:")
-        print(reports[i])
-      show(segms[i])
+    print("Longitud de la carretera:\t",getRoadLength(segms[i]),"píxeles.")
+    if args.m:
+      print("Métricas de evaluación de la segmentación:")
+      print(reports[i])
+    show(segms[i])
 
 
 
-if __name__ == "__main__":
-  main()
+# if __name__ == "__main__":
+#   main()
